@@ -151,13 +151,19 @@ public class GenerateInterfaces {
         int idx = dir.indexOf("src");
         if(idx >= 0){
           String subDir = dir.substring(idx);
-          dir = dir.replace(subDir,"devel/share/");
+          String dir_catkin_tools = dir.replace(subDir,"devel/.private/");
+          String dir_catkin_make = dir.replace(subDir,"devel/share/");
           String[] splits = directory.getAbsolutePath().split("/");
-          if(splits.length >0){
-            dir += splits[splits.length-1];
-            File newFileDir = new File(dir);
-            if(newFileDir.exists()){
-              topicDefinitionFileProvider.addDirectory(newFileDir);
+          if(splits.length > 0){
+            dir_catkin_tools += splits[splits.length-1] +"/share/"+splits[splits.length-1];
+            dir_catkin_make += splits[splits.length-1];
+            File file_catkin_tools = new File(dir_catkin_tools);
+            File file_catkin_make = new File(dir_catkin_make);
+            if(file_catkin_tools.exists()){
+              topicDefinitionFileProvider.addDirectory(file_catkin_tools);
+            }
+            if(file_catkin_make.exists()){
+              topicDefinitionFileProvider.addDirectory(file_catkin_make);
             }
           }
         }
