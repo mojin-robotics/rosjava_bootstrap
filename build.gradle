@@ -18,7 +18,7 @@ apply from: project.file('gradle.gradle')
 
 allprojects {
   group="org.ros.rosjava_bootstrap"
-  version = "0.3.0"
+  version = "0.3.4"
 }
 
 subprojects {
@@ -63,4 +63,4 @@ subprojects {
   }
 }
 
-defaultTasks 'publish', 'installDist'
+defaultTasks 'publish', 'install'

@@ -23,6 +23,13 @@ import org.apache.commons.io.FileUtils;
 import org.ros.exception.RosMessageRuntimeException;
 import org.ros.internal.message.definition.MessageDefinitionProviderChain;
 import org.ros.internal.message.definition.MessageDefinitionTupleParser;
+import org.ros.internal.message.action.ActionDefinitionFileProvider;
+import org.ros.internal.message.action.ActionGenerationTemplateActionGoal;
+import org.ros.internal.message.action.ActionGenerationTemplateActionResult;
+import org.ros.internal.message.action.ActionGenerationTemplateActionFeedback;
+import org.ros.internal.message.action.ActionGenerationTemplateGoal;
+import org.ros.internal.message.action.ActionGenerationTemplateResult;
+import org.ros.internal.message.action.ActionGenerationTemplateFeedback;
 import org.ros.internal.message.service.ServiceDefinitionFileProvider;
 import org.ros.internal.message.topic.TopicDefinitionFileProvider;
 import org.ros.message.MessageDeclaration;
@@ -42,8 +49,18 @@ public class GenerateInterfaces {
 
   private final TopicDefinitionFileProvider topicDefinitionFileProvider;
   private final ServiceDefinitionFileProvider serviceDefinitionFileProvider;
+  private final ActionDefinitionFileProvider actionDefinitionFileProvider;
   private final MessageDefinitionProviderChain messageDefinitionProviderChain;
   private final MessageFactory messageFactory;
+
+  private final MessageGenerationTemplate actionGenerationTemplateGoal     = new ActionGenerationTemplateGoal();
+  private final MessageGenerationTemplate actionGenerationTemplateResult   = new ActionGenerationTemplateResult();
+  private final MessageGenerationTemplate actionGenerationTemplateFeedback = new ActionGenerationTemplateFeedback();
+
+  private final MessageGenerationTemplate actionGenerationTemplateActionGoal     = new ActionGenerationTemplateActionGoal();
+  private final MessageGenerationTemplate actionGenerationTemplateActionResult   = new ActionGenerationTemplateActionResult();
+  private final MessageGenerationTemplate actionGenerationTemplateActionFeedback = new ActionGenerationTemplateActionFeedback();
+
   static private final String ROS_PACKAGE_PATH = "ROS_PACKAGE_PATH";
 
   public GenerateInterfaces() {
@@ -52,6 +69,8 @@ public class GenerateInterfaces {
     messageDefinitionProviderChain.addMessageDefinitionProvider(topicDefinitionFileProvider);
     serviceDefinitionFileProvider = new ServiceDefinitionFileProvider();
     messageDefinitionProviderChain.addMessageDefinitionProvider(serviceDefinitionFileProvider);
+    actionDefinitionFileProvider = new ActionDefinitionFileProvider();
+    messageDefinitionProviderChain.addMessageDefinitionProvider(actionDefinitionFileProvider);
     messageFactory = new DefaultMessageFactory(messageDefinitionProviderChain);
   }
 
@@ -110,12 +129,78 @@ public class GenerateInterfaces {
           MessageDeclaration.of(serviceType.getType(), definition);
       writeInterface(serviceDeclaration, outputDirectory, false);
       List<String> requestAndResponse = MessageDefinitionTupleParser.parse(definition, 2);
+
       MessageDeclaration requestDeclaration =
           MessageDeclaration.of(serviceType.getType() + "Request", requestAndResponse.get(0));
       MessageDeclaration responseDeclaration =
           MessageDeclaration.of(serviceType.getType() + "Response", requestAndResponse.get(1));
+
       writeInterface(requestDeclaration, outputDirectory, true);
       writeInterface(responseDeclaration, outputDirectory, true);
+    }
+  }
+
+  /**
+   * @param packages
+   *          a list of packages containing the topic types to generate
+   *          interfaces for
+   * @param outputDirectory
+   *          the directory to write the generated interfaces to
+   * @throws IOException
+   */
+  private void writeActionInterfaces(File outputDirectory, Collection<String> packages)
+          throws IOException {
+    Collection<MessageIdentifier> actionTypes = Sets.newHashSet();
+    if (packages.size() == 0) {
+      packages = actionDefinitionFileProvider.getPackages();
+    }
+    for (String pkg : packages) {
+      Collection<MessageIdentifier> messageIdentifiers =
+              actionDefinitionFileProvider.getMessageIdentifiersByPackage(pkg);
+      if (messageIdentifiers != null) {
+        actionTypes.addAll(messageIdentifiers);
+      }
+    }
+    for (MessageIdentifier actionType : actionTypes) {
+      String definition = messageDefinitionProviderChain.get(actionType.getType());
+      MessageDeclaration actionDeclaration =
+              MessageDeclaration.of(actionType.getType(), definition);
+      writeInterface(actionDeclaration, outputDirectory, false);
+      List<String> goalResultAndFeedback = MessageDefinitionTupleParser.parse(definition, 3);
+
+      MessageDeclaration goalDeclaration = MessageDeclaration.of(
+              actionType.getType() + "Goal",
+              actionGenerationTemplateGoal.applyTemplate(goalResultAndFeedback.get(0))
+      );
+      MessageDeclaration resultDeclaration = MessageDeclaration.of(
+              actionType.getType() + "Result",
+              actionGenerationTemplateResult.applyTemplate(goalResultAndFeedback.get(1))
+      );
+      MessageDeclaration feedbackDeclaration = MessageDeclaration.of(
+              actionType.getType() + "Feedback",
+              actionGenerationTemplateFeedback.applyTemplate(goalResultAndFeedback.get(2))
+      );
+
+      MessageDeclaration actionGoalDeclaration = MessageDeclaration.of(
+              actionType.getType() + "ActionGoal",
+              actionGenerationTemplateActionGoal.applyTemplate(actionType.getType())
+      );
+      MessageDeclaration actionResultDeclaration = MessageDeclaration.of(
+              actionType.getType() + "ActionResult",
+              actionGenerationTemplateActionResult.applyTemplate(actionType.getType())
+      );
+      MessageDeclaration actionFeedbackDeclaration = MessageDeclaration.of(
+              actionType.getType() + "ActionFeedback",
+              actionGenerationTemplateActionFeedback.applyTemplate(actionType.getType())
+      );
+
+      writeInterface(goalDeclaration, outputDirectory, true);
+      writeInterface(resultDeclaration, outputDirectory, true);
+      writeInterface(feedbackDeclaration, outputDirectory, true);
+
+      writeInterface(actionGoalDeclaration, outputDirectory, true);
+      writeInterface(actionResultDeclaration, outputDirectory, true);
+      writeInterface(actionFeedbackDeclaration, outputDirectory, true);
     }
   }
 
@@ -142,33 +227,15 @@ public class GenerateInterfaces {
     for (File directory : packagePath) {
       topicDefinitionFileProvider.addDirectory(directory);
       serviceDefinitionFileProvider.addDirectory(directory);
-
-      //ugly hack for action definitions
-      String dir = directory.getAbsolutePath();
-      String actionDir = dir + "/action";
-      File actionFile = new File(actionDir);
-      if(actionFile.exists()) {
-        int idx = dir.indexOf("src");
-        if(idx >= 0){
-          String subDir = dir.substring(idx);
-          dir = dir.replace(subDir,"devel/share/");
-          String[] splits = directory.getAbsolutePath().split("/");
-          if(splits.length >0){
-            dir += splits[splits.length-1];
-            File newFileDir = new File(dir);
-            if(newFileDir.exists()){
-              topicDefinitionFileProvider.addDirectory(newFileDir);
-            }
-          }
-        }
-      }
-
+      actionDefinitionFileProvider.addDirectory(directory);
     }
     topicDefinitionFileProvider.update();
     serviceDefinitionFileProvider.update();
+    actionDefinitionFileProvider.update();
     try {
       writeTopicInterfaces(outputDirectory, packages);
       writeServiceInterfaces(outputDirectory, packages);
+      writeActionInterfaces(outputDirectory, packages);
     } catch (IOException e) {
       throw new RosMessageRuntimeException(e);
     }
@@ -179,6 +246,7 @@ public class GenerateInterfaces {
     if (arguments.size() == 0) {
       arguments.add(".");
     }
+
     String rosPackagePath = System.getenv(ROS_PACKAGE_PATH);
     // Overwrite with a supplied package path if specified (--package-path=)
     for (ListIterator<String> iter = arguments.listIterator(); iter.hasNext(); ) {
@@ -189,6 +257,7 @@ public class GenerateInterfaces {
         break;
       }
     }
+
     Collection<File> packagePath = Lists.newArrayList();
     for (String path : rosPackagePath.split(File.pathSeparator)) {
       File packageDirectory = new File(path);
@@ -196,6 +265,7 @@ public class GenerateInterfaces {
         packagePath.add(packageDirectory);
       }
     }
+
     GenerateInterfaces generateInterfaces = new GenerateInterfaces();
     File outputDirectory = new File(arguments.remove(0));
     generateInterfaces.generate(outputDirectory, arguments, packagePath);
